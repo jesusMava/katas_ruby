@@ -1,51 +1,84 @@
-class Tournament
-  TABLE = "Team                           | MP |  W |  D |  L |  P"
-  def self.tally(input)
-
-    return TABLE+"\n" if input == "\n"
-
-    hash = {}
-    teams_and_result = input.split("\n")
-
-    table_board = teams_and_result.each do |team|
-      teams = team.split(';')
-      result = teams.pop
-      teams.each do |t| 
-        if hash[t.to_sym]
-          hash[t.to_sym][:MP] += 1
-        else
-          hash[t.to_sym] = { MP: 1, W:0, D: 0, L: 0, P: 0 }
-        end
+# this is a copy of https://exercism.org/tracks/ruby/exercises/tournament/solutions/3zcurdia
+module Tournament
+  class Parser
+    def self.parse(input)
+      new.parse(input)
+    end
+    def parse(input)
+      input.split("\n").map do |line|
+        team_a, team_b, result = line.split(';')
+        result = result.to_sym
+        {
+          team_a => result,
+          team_b => inverse_result(result)
+        }
       end
-
-
+    end
+    private
+    def inverse_result(result)
       case result
-      when 'win'
-        hash[teams[0].to_sym][:W] += 1
-        hash[teams[1].to_sym][:L] += 1
-      when 'loss'
-        hash[teams[1].to_sym][:W] += 1
-        hash[teams[0].to_sym][:L] += 1
-      when 'draw'
-        hash[teams[1].to_sym][:D] += 1
-        hash[teams[0].to_sym][:D] += 1
+      when :win
+        :loss
+      when :loss
+        :win
+      else
+        :draw
       end
     end
-    hash.each do |key, value|
-      hash[key][:P] = hash[key][:W] * 3 + hash[key][:D]
+  end
+  class ScoreTable
+    attr_reader :team, :win, :loss, :draw
+    def self.build(matches)
+      matches.each_with_object({}) do |match, output|
+        match.each_key do |team|
+          output[team] = ScoreTable.new(team) unless output.key?(team)
+          output[team].add_match(match[team])
+        end
+      end.values
     end
-
-    is_uniq = hash.map{ |e| e[1][:P] }
-      hash = hash.sort_by{ |k,v| v[:P] }.reverse
-      if is_uniq.uniq != is_uniq && hash.size > 2
-      # hash.reverse!
-      hash.sort!
+    def initialize(team)
+      @team = team
+      @win = 0
+      @loss = 0
+      @draw = 0
     end
-    res = ''
-    hash.each do |el| 
-      res += format("%-31s|  #{el[1][:MP]} |  #{el[1][:W]} |  #{el[1][:D]} |  #{el[1][:L]} |  #{el[1][:P]}\n", "#{el[0].to_s}")
-    end 
-
-     res = "#{TABLE}\n#{res}"
+    def matches
+      @matches ||= win + draw + loss
+    end
+    def add_match(result)
+      case result
+      when :win
+        @win += 1
+      when :draw
+        @draw += 1
+      when :loss
+        @loss += 1
+      end
+    end
+    def points
+      @points ||= win * 3 + draw * 1
+    end
+    def to_a
+      [team, matches, win, draw, loss, points]
+    end
+    def <=>(other)
+      [-points, team] <=> [-other.points, other.team]
+    end
+  end
+  class Report
+    HEADER = %w[Team MP W D L P].freeze
+    FORMAT = "%-31s| %2s | %2s | %2s | %2s | %2s\n"
+    def self.generate(tally)
+      tally.each_with_object(FORMAT % HEADER) do |score, acc|
+        acc << FORMAT % score.to_a
+      end
+    end
+  end
+  def self.tally(input)
+    input
+      .then(&Parser.method(:parse))
+      .then(&ScoreTable.method(:build))
+      .sort
+      .then(&Report.method(:generate))
   end
 end
